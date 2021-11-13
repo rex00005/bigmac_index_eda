@@ -1,0 +1,29 @@
+h1 {
+  color: #E9967A;
+    text-align: center;
+    font-family: 'Dancing Script', cursive;
+    font-size: 34px;
+}
+
+h3 {
+  color: #E9967A;
+  font-size: 26px;
+}
+
+h5 {
+  color: #E9967A;
+    text-align: center;
+    font-family: 'Dancing Script', cursive;
+    font-size: 22px;
+}
+
+
+body{
+  background-color: blue
+  font-family: 'Dancing Script', cursive;
+    
+}
+
+p{
+  color:#E9967A
+}

@@ -1,0 +1,525 @@
+---
+title: "ETC5521 Assignment 2"
+subtitle: "The Big Mac Index"
+team: emu
+author:
+  - Xiaoyu Tian
+  - Yin Shan Ho
+  - Qian Duan
+  - Shaohu Chen
+date: "`r Sys.Date()`"
+output: 
+  html_document: 
+    toc: true
+    toc_float: true
+---
+```{css, echo = FALSE}
+h1 {
+  color: #191970;
+    text-align: center;
+    font-family: 'Dancing Script', cursive;
+    font-size: 34px;
+}
+
+h3 {
+  color: #778899;
+  font-size: 26px;
+}
+
+h2 {
+  color: #4682B4;
+    font-size: 30px;
+}
+
+body{
+  background-color: #F5FFFA;
+}
+
+```
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+library(readr)
+library(tidyverse)
+library(rnaturalearth)
+library(sf)
+library(viridis)
+library(gganimate)
+library(kableExtra)
+library(ExPanDaR)
+library(ggalt)
+library(naniar)
+library(plotly)
+library(sparkline)
+library(DT)
+```
+
+[This assignment is for ETC5521 Assignment 1 by Team `r rmarkdown::metadata$team` comprising of `r knitr::combine_words(rmarkdown::metadata$author)`.]{style="color:#006DAE;"}
+
+![The Big Mac Index](https://today.in-24.com/content/uploads/2021/07/23/b12a6db053.jpg)
+
+# Introduction and motivation
+
+The data of this report is from [The Economist](https://www.economist.com/big-mac-index) and can be download from [tidytuesday](https://github.com/rfordatascience/tidytuesday/blob/master/data/2020/2020-12-22/readme.md).
+
+This report is to explore the Big Mac indices derived from the Big Mac prices around the world, and how the indices is associated with a country's purchasing power. Since going for a MC Donald's meal is really what people often do in their daily lives and the Big Mac is the most popular universal menu items, it is interesting to see that the price of the Big Mac burger can actually be used as an benchmark to predict the economic related events that matters for our daily lives. Hence, our team is motivated to further explore this topic. The focus of this report will be on how the price of the big mac has changed over time and how the big mac indices might predict the foreign exchange rate, as well as indicating the purchasing power for that country. And we also want to analyze if there is a correlation between GDP and Big Mac price. Also, there are some limitations. Since the period is long, part of countries' data are not included like GDP price or even lose the data. In this way, when we want to make comparison, the statistics may not be that reliable, but it could give us some trend to make analysis.
+
+
+
+## Questions based on the data:
+
+1. How does Big Mac Index compared with GDP?
+  
+2. How much has the Big Mac prices changed over time around the world?
+
+3. Compare and contrast the Big Mac Index with the official exchange rate, and how did the index reflect the value of the currency?
+
+4. How has the global GDP changed over time and how does the purchasing power affected based on the changes?
+
+5. Country's economic situation based on adjust price and actual price
+
+# Data description
+
+```{r download-data, eval = FALSE}
+bigmac <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-12-22/big-mac.csv')
+
+readr::write_csv(bigmac, here::here("data/bigmac.csv"))
+
+knitr::opts_chunk$set(echo = FALSE)
+
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+Variable <- c("date", "iso_a3", 
+             "currency_code", "name",
+             "local_price", "dollar_ex",
+             "dollar_price", "USD_raw",
+             "EUR_raw", "GBP_raw",
+             "JPY_raw","CNY_raw",
+             "GDP_dollar", "adj_price", 
+             "USD_adjusted", "EUR_adjusted", 
+             "GBP_adjusted", "JPY_adjusted", "CNY_adjusted")
+Description <- c("Date of observation", "Three-character ISO 3166-1 country code", 
+             "Three-character ISO 4217 currency code", "Country name",
+             "Price of a Big Mac in the local currency", "Local currency units per dollar",
+             "Price of a Big Mac in dollars", "Raw index, relative to the US dollar","Raw index, relative to the Euro",
+             "Raw index, relative to the British pound","Raw index, relative to the Japanese yen","Raw index, relative to the Chinese yuan",
+             "GDP per person, in dollars", "GDP-adjusted price of a Big Mac, in dollars", "Adjusted index, relative to the US dollar", "Adjusted index, relative to the Euro", "Adjusted index, relative to the British pound", "Adjusted index, relative to the Japanese yen", "Adjusted index, relative to the Chinese yuan")
+
+Type <- c("Date", "Character", "Character", "Character", "Numeric", "Numeric", "Numeric", "Numeric", "Numeric", "Numeric", "Numeric", "Numeric"
+          , "Numeric", "Numeric", "Numeric", "Numeric", "Numeric", "Numeric", "Numeric")
+Source <- c("","", "", "", "McDonalds; The Economist", "Thomson Reuters","", "", "", "","", "", "IMF", "","", "", "",  "", "")
+
+No. <- (1:length(Variable))
+data_dictionary <- data.frame(No., Variable, Description, Type, Source)
+
+```
+
+
+The data used in this report is about the Big Mac Index. The Big Mac Index is calculated simply by dividing the local price of a Big Mac in one country by the local price of a Big Mac in another country in their respective currencies. When compared with the official exchange rate, the Big Mac Index reflects which currencies are under or overvalued.
+This data set is provided by the Economists and the source data are from several places. The Big Mac prices are directly from the reporting of McDonald's around the world; exchange rates are from Thomson Reuters; GDP data are from the IMF World Economist Outlook reports. Detailed structure of the data, including variables and their types are listed in the data dictionary as follows.
+
+```{r, echo=FALSE}
+data_dictionary %>% 
+  kbl(caption = "Data dictionary", align = "c") %>% 
+  row_spec(0, color = "white",background = "#2fa4e7") %>% 
+  kable_styling(bootstrap_options = "striped", font_size = 12) %>% 
+  scroll_box(width = "100%", height = "200px") 
+
+```
+
+## Data Wrangling
+```{r}
+bigmac <- read.csv("./data/bigmac.csv")
+```
+
+```{r, echo = TRUE, message = TRUE}
+
+length(unique(bigmac$name))
+length(unique(bigmac$iso_a3))
+```
+After reviewing the dataset, we found there are 56 unique country identifying code, but 57 country name. We discovered that the United Arab Emirates is recorded as both "UAE" and "United Arab Emirates" in the column 'name'. Thus, we need to check whether there are duplicated data.
+
+```{r}
+bigmac %>% filter(name %in% c("UAE", "United Arab Emirates")) %>% 
+  miss_var_table()
+```
+
+By filtering the name by the two country name, we found that there is no duplication in the dataset. It's the problem with the change in the recorded name of that country. Hence, we changed the name of "UAE" to its full name "United Arab Emirates". However, by reviewing the dataset we realised that there are Nas in the dataset, and hence we conducted a check on the percentage of missing values in the dataset.
+
+```{r}
+bigmac <- bigmac %>% 
+  mutate(name = case_when(
+    name == "UAE" ~ "United Arab Emirates",
+    TRUE ~ as.character(name)))
+
+prepare_missing_values_graph(bigmac, ts_id = "date")
+```
+
+We can see that most of variables have 0 missing value, but for the GDP_dollar, the data before 2011 are all missing, and hence all the adjusted price that derived from the GDP is missing as well, and hence the following analysis on the GDP and adjusted price will be mainly focus on the year from 2011 to 2020.
+
+
+# Analysis and findings
+
+## Where has the most expensive Big Mac and where has the cheapest?
+
+```{r}
+pricehighest <- bigmac %>%
+  select(date,name,dollar_price) %>%
+  filter(date == "2020-07-01") %>%
+  group_by(name) %>%
+  summarise(highest_price = max(dollar_price)) %>%
+  arrange(-highest_price) %>%
+  head(6) 
+
+kable(pricehighest, caption = "The 6 most expensive regions to buy Big Mac in 2020 July")%>%
+  kable_styling(bootstrap_options = "hover")
+  
+
+pricecheapest <- bigmac %>%
+  select(date,name,dollar_price) %>%
+  filter(date == "2020-07-01") %>%
+  group_by(name) %>%
+  summarise(cheapest_price = min(dollar_price)) %>%
+  arrange(cheapest_price) %>%
+  head(6)
+kable(pricecheapest,caption = "The 6 cheapest regions to buy Big Mac in 2020 July") %>%
+  kable_styling(bootstrap_options = "hover")
+
+
+
+```
+
+The two tables presents the most expensive and the cheapest places to buy Big Mac, of which the expensive area are most from Europe and North America and cheapest area are mostly developing countries.
+
+## How does Big Mac Index compared with GDP?
+
+```{r}
+ggplot(bigmac,aes(x = gdp_dollar, y = dollar_price))+
+  geom_point(color = "black", alpha = 0.5, size = 2)+
+  geom_smooth(method = "lm")+
+  labs(x = "gdp(Dollar)",
+       y = "Big Mac price(Dollar)")+
+  ggtitle("The Big Mac Index prince compared with GDP") +
+  theme_bw()
+```
+
+
+The plot shows the relationship between GDP and Big Mac Price. Most countries with high GDP are pretend to have high local Big Mac Price, however, for many countries, though the GDP is low the local price still extremely high. Since most points are centralized in GDP less than 25000, while some prices range from 1 dollar to 6 dollars for a big Mac. This could only present that some countries' inflation and purchasing ability is really high though the average GDP is low.
+ 
+```{r}
+fit <- lm(dollar_price ~ gdp_dollar, data = bigmac)
+plot(fit)
+```
+The Residual plot and the Scale Location plot present similar trends that there is a positive trend between gdp dollar and dollar price but the correlation is not that strong. Since there are more plots in low predicted values, and the distribution is not that perfect. The QQ plot indicates that the tails both in lower and upper are lighter, since there are larger value than expected in the upper tail. All the four plots identify that the correlation between the GDP and Big Mac price, but still not very perfect liner model.
+
+
+## How much has the Big Mac prices changed over time around the world?
+
+```{r import-coordinates}
+
+# Import the countries' coordinates
+countries <- ne_countries(returnclass = "sf", scale = "medium") %>% 
+  select(admin) 
+
+```
+
+```{r modify-eurozone}
+# create the list of Eurozone countries
+euro_countries <- c("Austria", "Belgium", "Cyprus", "Estonia", "Finland", "France", "Germany", "Greece", "Ireland", "Italy", "Latvia", "Lithuania", "Luxembourg", "Malta","Netherlands", "Portugal", "Slovakia", "Slovenia", "Spain")
+
+eurozone <- tibble(currency_code = rep("EUR", length(euro_countries)),
+                   name = euro_countries)
+
+date<- bigmac %>%
+filter(currency_code == "EUR")
+
+bigmac_all <- date %>% 
+  inner_join(eurozone, by = "currency_code") %>% 
+  select(-name.x) %>% 
+  rename(name = name.y) %>% 
+  bind_rows(bigmac) %>% 
+  arrange(date,name)
+```
+
+```{r checking-data, eval= FALSE}
+# Checking whether the countries' names are matching in "bigmac" dataset and "countries" dataset 
+checking <-  anti_join(bigmac,countries, by =c("name" ="admin"))
+unique(checking$name)
+```
+
+### Overview of the nominal price change by map
+
+```{r nprice-map}
+# Make adjustment to the countries that do not match
+bigmac_loc <- bigmac_all %>%
+  mutate(name = recode(name,
+                       "United States" = "United States of America",
+                       "Britain" = "United Kingdom",
+                       "UAE" = "United Arab Emirates",
+                       "Hong Kong" = "Hong Kong S.A.R.")) 
+
+bigmac_loc <- countries %>% 
+  right_join(bigmac_loc, by = c("admin" = "name")) 
+
+bigmac_map  <- ggplot()+
+  geom_sf(data = countries, fill = "white")+
+  geom_sf(data = bigmac_loc %>% 
+            filter(!is.na(dollar_price)), mapping = aes(fill = dollar_price))+
+  scale_fill_viridis(direction = -1, 
+                     option = "B")+
+  labs(title = "Nominal Price changes of Big Mac(in US dollar)",
+       subtitle = "date: {current_frame}",
+       fill = "price(in dollar)")+
+  theme_void()+
+  transition_manual(date)
+
+animate(bigmac_map, duration = 25, fps = 15, width = 1000, height = 600, renderer = gifski_renderer())
+
+```
+
+The map above shows the price change of the Big Mac in US Dollar overtime. The darker color represents higher price while the lighter means lower. Based on the map, it is found that the price of the Big Mac is comparatively higher in Northern European countries, American continents as well as some of the Middle East areas. The details are shown in the table below. Also, it is interesting to see that the colours in the area of North America and Europe has dramatically became darker after 2008 and 2012, while the areas in Asia almost remain unchanged. This could be due to the Global Financial Crisis and the European Debt Crisis which were well-known in the year of 2008 and 2012.  
+
+### Detailed Data
+
+```{r nprice-change}
+n_price_change <- bigmac %>% 
+  select(name, date, dollar_price) %>% 
+  group_by(name) %>%
+  mutate(pct_change = (dollar_price/lag(dollar_price)-1)*100) %>%
+  drop_na() %>%
+  group_by(name) %>%
+  summarise(avg_pct_change = mean(pct_change)) %>%
+  arrange(desc(avg_pct_change)) 
+```
+
+
+```{r nprice-col, fig.width = 10, fig.height = 8}
+ggplot(n_price_change, aes(x = avg_pct_change, y = reorder(name,avg_pct_change))) +
+  geom_col(fill = "#191970")+
+  labs(x = "Average Big Mac norminal price changes",
+       y = "Country")+
+  ggtitle("The average percentage on the nominal price of Big Mac($)") +
+  theme_classic()
+```
+
+The plot above is the average percentage on the nominal price of Big Mac in US Dollar. According to the table, there are **great increases of the Big Mac nominal price in the low income regions** like Saudi Arabia, Lebanon, Uruguay, and Argentina with 11.96%, 9.61%, 7.05% and 6.26% respectively. It indicates that the price of Big Mac changes a lot in these areas which is possible due to the high inflation in these countries.  
+However, it is found that there was an **medium increase on the nominal price of Big Mac price in high income countries** like Norway, Denmark, Britain and United Arab Emirates. These countries price changes not too much also reflect that the local economic has an impact on Big Mac price.
+
+On the other hand, it is **interestingly found that there are negative growth on the price small countries like Croatia, Honduras, Turkey and Guatemala**. There is a big gap between riches and poors in these countries, that is fewer people are able to purchase the Big Mac. Therefore, the price changes go to negative.
+
+## Compare and contrast the Big Mac Index with the official exchange rate, and how did the index reflect the value of the currency?
+
+### Trend of Big Mac Index
+
+```{r currency-value, fig.height= 7, fig.width=10}
+currency_value <- bigmac %>%
+  group_by(name) %>%
+  mutate(date = as.Date(date)) %>%
+  filter(!is.na(usd_adjusted), name != "United States") %>%
+  ggplot(aes(x = date,
+             y = usd_adjusted))+
+  geom_col(aes(fill = factor(sign(usd_adjusted),
+                             labels = c("Undervalued", "Overvalued"))))+
+  geom_line(aes(y =usd_raw), color = "#0000CD", linesize = 4)+
+  scale_fill_manual(values = c("Undervalued" = "#87CEEB", "Overvalued" = "#B22222"))+
+  geom_hline(yintercept = 0,
+             alpha = 0.7,
+             size = 0.5)+
+  labs(title = "USD adjusted BIG MAC INDEX ",
+    fill = "Local Currency")+
+  theme_minimal()+
+  theme(axis.text.x=element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(face = "bold"))+
+  facet_wrap(~name)+
+  theme(legend.position = "bottom") +
+  labs(y = "USD aAdjusted Index",
+       x = "Date")
+
+ggplotly(currency_value) %>%
+  layout(legend = list(orientation = "h", x = 0.4, y = -0.2))
+
+```
+
+
+The plot above shows the trend of the Big mac Index of different countries. As the Big Mac Index reflects the currency value, we can easily indicate whether the currency is overvalued or undervalued for the time from the index. Based on the plot, the **green bars indicate that the currency is undervalued** whereas the **red indicate overvalued**. The **Blue lines are the trend of the movement on currencies' exchange rate** based on US Dollar. It is found that *Brazilian Real and Colombian Pesos are highly overvalued*. Meanwhile, *Malaysian Ringgit and New Taiwan Dollar are found highly undervalued*.  
+There are some special findings that some of **the currencies of high income regions with high nominal price of the Big Mac are actually undervalued**. For instance, the Northern Europeans.   
+On the other hand, from the previous section, it was found that, the **nominal price of the Big Mac had a negative growth in Chile, whereas the Chilean Peso is found overvalued** here.
+
+## How has the global GDP changed over time and how does the purchasing power affected based on the changes?
+
+
+```{r}
+dat <- bigmac %>% 
+  select(date, name, adj_price) %>% 
+  drop_na() %>% 
+  group_by(name) %>% 
+  summarise(initial = first(adj_price),
+         initial_date = first(date),
+         last = last(adj_price),
+         last_date = last(date),
+         difference = last - initial,
+         percent_difference = ((last - initial)/initial)*100
+         ) 
+
+```
+
+```{r}
+ggplot(dat, aes(x = initial, xend = last, y = reorder(name, initial), group = name)) +
+  geom_dumbbell(colour_x ="red",
+                size_x = 2.5,
+                size = 0.75, 
+                color = "moccasin",
+                colour_xend ="goldenrod1",
+                size_xend = 2.5,
+                dot_guide = TRUE,
+                dot_guide_size = 0.25) + 
+  geom_rect(aes(xmin = 8.1, xmax = 8.9, ymin = 0, ymax = 40), fill = "moccasin") +
+  geom_text(aes(label = paste0(round(percent_difference, 0), "%"), y = name, x = 8.5), size = 3) +
+  geom_text(data = filter(dat, name == "Norway"), 
+            aes(x = 8.5, y = name, label = "% Change"),
+            color = "black", size = 3.1, vjust = -1, fontface = "bold") +
+  geom_text(data = filter(dat, name == "Norway"), 
+            aes(x = initial, y = name, label = "2011 Price"),
+            color = "black", size = 3.1, vjust = -1, fontface = "bold") +
+  geom_text(data = filter(dat, name == "Norway"), 
+            aes(x = last, y = name, label = "2020 Price"),
+            color = "black", size = 3.1, vjust = -1, fontface = "bold") +
+  scale_x_continuous(labels = scales::label_dollar(prefix = "$",
+                                                   accuracy = .01),
+                     breaks = scales::breaks_pretty(n = 5),
+                     name = "Price of a Big Mac, USD")  +
+  theme_minimal() +
+  labs(title = "Big Mac GDP Adjusted Price Changed from 2011 to 2020")+
+   labs(y = "Country")
+```
+
+The dumbbell chart shows the price of the Big Mac in each countries when adjusted by GDP from 2011 to 2020. It is interesting to see that there is a significant adjusted price decrease in Northern European, such as Norway, Switzerland, etc., where as discussed in the previous section that Norway has actually the highest nominal price increase over time. This might indicate a deflation in the Northern European countries. In contrast, we can see that the real price of a big mac in Asian countries remains stable over time. While all the developed countries has a higher adjusted price in burger, the price in the developing countries is significantly lower. This might suggest that poorer countries have lower labor costs than richer countries, and thus has less affected by the GDP factors.
+
+### Detailed data
+
+```{css, echo=FALSE}
+.dataTables_wrapper {
+    position: relative;
+    clear: both;
+    *zoom: 1;
+    zoom: 1;
+    text-align: center;
+    width: 700px;
+}
+```
+
+
+
+```{r}
+detail_bigmac <- bigmac %>% 
+  select(name, date, gdp_dollar, adj_price) %>% 
+  filter(!is.na(gdp_dollar & adj_price), name != "Saudi Arabia") %>% 
+  mutate(burger_affordable = gdp_dollar/adj_price) %>% 
+ drop_na() 
+
+detail_bigmac %>%
+  group_by(name)%>%
+  summarise(affordable_trend = spk_chr(burger_affordable,
+                           type = "line",
+                           highlightLineColor = 'green', 
+                           highlightSpotColor = 'yellow'),
+           avg_affordable = mean(burger_affordable))%>%
+   arrange(desc(avg_affordable)) %>% 
+  datatable(escape = F,
+              rownames = F,
+              options = list(fnDrawCallback = htmlwidgets::JS('function(){
+                                                              HTMLWidgets.staticRender();
+                                                              }'))
+    )%>% 
+    spk_add_deps() 
+```
+
+
+
+By observing the changes in the purchasing power of each country over time. This proves that Europe, North America and Australia have strong purchasing power over time. In addition, it is interesting that they followed a similar trend and reached the peak of their purchasing power around 2016. As for other countries, we see that the purchasing power of East Asia and Singapore is at a medium level and growing slowly, while the purchasing power of South America and Southeast Asia is at a low level and remains unchanged.
+
+Based on the average number of affordable burgers in each country, we can see that European and North American countries still top the list. Pakistan’s GDP can only afford 503 Big Macs on average, while Norway can buy 13,770 Big Macs, which is 27 times higher. This may indicate the huge purchasing power between developed and developing countries.
+
+
+## Country's economic situation
+
+We take China, Pakistan, and Norway as examples to judge the country's economic situation by observing the difference between price adjustments and actual prices
+
+```{r}
+sd_price <- bigmac %>% select(date, name, dollar_price,adj_price) %>% 
+  mutate(percentage_price = (adj_price-dollar_price)/dollar_price,
+         date = as.Date(date)) %>% 
+  na.omit()%>%
+  filter(name %in% c("China","Pakistan","Norway")) 
+ggplot(sd_price,aes(x=date, y=percentage_price)) +
+    facet_wrap(~name) +
+    geom_smooth(method = lm, color='tomato',span = 0.3) +
+    geom_point(alpha=0.5)+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(title = "Percentage of price adjustment from 2012-2021") +
+  theme_bw()+
+  ylab("Percentage of price adjustment")
+```
+
+The price adjustment percentage is calculated by subtracting the actual price from the adjusted price divided by the actual price. From the change in the percentage of price adjustment, it can be seen that the Chinese economy is closer to stability, because the adjusted price is higher than the actual price to now it is almost equal to the actual price. As a developed country, Norway’s adjusted prices are gradually higher than actual prices, which means that its economy is in a slow-rising stage, while Pakistan’s situation is completely the opposite. The locals are increasingly unable to afford Big Macs.
+
+
+# Conclusion
+
+In summary, the price of Big Macs is relatively high in high-income areas. In addition, prices in these areas have risen sharply after 2008 and 2012, while prices in Asia are relatively low, with little change, and some even show negative growth. However, when the GDP factor is taken into account, we see that the real prices of high-income countries represented by Norway have experienced negative growth. It seems that the country still has strong purchasing power and its currency value may be underestimated. The price of Big Macs in fast-developing countries represented by China has risen slightly, but in the end it is almost equal to adjusting prices, indicating that the country is in an economically stable state. Especially for the rapid control of the epidemic during this period, the currency has a better circulation value. The real price growth of low-income war-torn countries represented by Pakistan has declined significantly, indicating that war and other factors have seriously affected their national living conditions and national economic conditions, and their currencies have experienced inflation.
+
+# References
+
+### Articles
+1. EU. (April 23, 2021). Which countries use the euro. Retrieved August 16, 2021, from https://europa.eu/european-union/about-eu/euro/which-countries-use-euro_en
+
+2. The Economist. The Big Mac index. Retrieved August 26, 2021, from https://www.economist.com/big-mac-index
+
+3. World Bank. World Bank Country and Lending Groups.  Retrieved August 26, 2021, from https://datahelpdesk.worldbank.org/knowledgebase/articles/906519
+
+### R packages
+
+1. Hadley Wickham and Jim Hester (2021). readr: Read Rectangular Text Data. R
+  package version 2.0.0. https://CRAN.R-project.org/package=readr
+
+2. Wickham et al., (2019). Welcome to the tidyverse. Journal of Open Source
+  Software, 4(43), 1686, https://doi.org/10.21105/joss.01686
+  
+3. Andy South (2017). rnaturalearth: World Map Data from Natural Earth. R
+  package version 0.1.0. https://CRAN.R-project.org/package=rnaturalearth
+  
+4. Pebesma, E., 2018. Simple Features for R: Standardized Support for Spatial
+  Vector Data. The R Journal 10 (1), 439-446,
+  https://doi.org/10.32614/RJ-2018-009
+  
+5. Simon Garnier (2018). viridis: Default Color Maps from 'matplotlib'. R
+  package version 0.5.1. https://CRAN.R-project.org/package=viridis
+
+6. Thomas Lin Pedersen and David Robinson (2020). gganimate: A Grammar of
+  Animated Graphics. R package version 1.0.7.
+  https://CRAN.R-project.org/package=gganimate
+
+7. Hao Zhu (2021). kableExtra: Construct Complex Table with 'kable' and Pipe
+  Syntax. R package version 1.3.4.
+  https://CRAN.R-project.org/package=kableExtra
+
+8. Joachim Gassen (2020). ExPanDaR: Explore Your Data Interactively. R
+  package version 0.5.3. https://CRAN.R-project.org/package=ExPanDaR
+
+9. Bob Rudis, Ben Bolker and Jan Schulz (2017). ggalt: Extra Coordinate
+  Systems, 'Geoms', Statistical Transformations, Scales and Fonts for
+  'ggplot2'. R package version 0.4.0.
+  https://CRAN.R-project.org/package=ggalt
+
+10. Ramnath Vaidyanathan, Kent Russell and Gareth Watts (2016). sparkline: 'jQuery'
+  Sparkline 'htmlwidget'. R package version 2.0.
+  
+11. Yihui Xie, Joe Cheng and Xianying Tan (2021). DT: A Wrapper of the JavaScript
+  Library 'DataTables'. R package version 0.18. https://CRAN.R-project.org/package=DT
+
